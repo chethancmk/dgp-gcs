@@ -15,6 +15,9 @@ from dgp.utils.cloud.s3 import (
     convert_uri_to_bucket_path,
     get_string_from_s3_file,
 )
+from dgp.utils.cloud.gcs import (
+    get_string_from_gcs_file,
+)
 
 
 def open_pbobject(path, pb_class):
@@ -36,8 +39,9 @@ def open_pbobject(path, pb_class):
     pb_object: pb2 object
         Desired pb2 object to be opened.
     """
+    print("Inside open_pbobject function")
     assert path.endswith(".json"), 'File extension for {} needs to be json.'.format(path)
-    if path.startswith('s3://'):
+    if path.startswith('s3://') or path.startswith('gs://'):
         return open_remote_pb_object(path, pb_class)
     assert os.path.exists(path), f'Path not found: {path}'
     with open(path, 'r', encoding='UTF-8') as json_file:
@@ -92,12 +96,19 @@ def open_remote_pb_object(s3_object_uri, pb_class):
     ValueError
         Raised if s3_object_uri is not a valid S3 path.
     """
+    print("Inside open_remote_pb_object function")
     if s3_object_uri.startswith('s3://'):
         bucket_name, s3_base_path = convert_uri_to_bucket_path(s3_object_uri)
+        pb_object = Parse(get_string_from_s3_file(bucket_name, s3_base_path), pb_class())
+    elif s3_object_uri.startswith('gs://'):
+        bucket_name, s3_base_path = convert_uri_to_bucket_path(s3_object_uri)
+        pb_object = Parse(get_string_from_gcs_file(bucket_name, s3_base_path), pb_class())
+        print('Recieved JSON')
+        print(pb_object)
     else:
         raise ValueError("Expected path to S3 bucket but got {}".format(s3_object_uri))
 
-    pb_object = Parse(get_string_from_s3_file(bucket_name, s3_base_path), pb_class())
+    #pb_object = Parse(get_string_from_s3_file(bucket_name, s3_base_path), pb_class())
 
     return pb_object
 

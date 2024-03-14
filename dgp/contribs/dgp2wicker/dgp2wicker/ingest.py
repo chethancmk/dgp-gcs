@@ -16,12 +16,14 @@ import numpy as np
 import pyspark
 import wicker
 import wicker.plugins.spark as wsp
+import wicker.plugins.spark_gcs as wsp_gcs
 from wicker.schema import IntField, StringField
 
 from dgp.datasets import ParallelDomainScene, SynchronizedScene
 from dgp.proto import dataset_pb2
 from dgp.proto.dataset_pb2 import SceneDataset
 from dgp.utils.cloud.s3 import sync_dir
+from dgp.utils.cloud.gcs import sync_dir_gcs
 from dgp.utils.protobuf import open_pbobject
 
 PC_DATUMS = ('point_cloud', 'radar_point_cloud')
@@ -180,6 +182,7 @@ def dgp_to_wicker_sample(
     wicker_sample: Dict
         DGP sample in the Wicker format.
     """
+    print('In dgp2wicker function')
     wicker_sample = {}
     for datum in sample:
         datum_name = datum['datum_name']
@@ -218,6 +221,7 @@ def get_scenes(scene_dataset_json: str, data_uri: Optional[str] = None) -> List[
     scenes: List[int,str,str]
         A list of tuples(<index>, <split name>, <path to scene.json>) for each scene in scene_dataset_json.
     """
+    print("Inside the Get Scenes Function")
     if data_uri is None:
         data_uri = os.path.dirname(scene_dataset_json)
 
@@ -372,6 +376,7 @@ def ingest_dgp_to_wicker(
         than the rest of the scene data.
 
     """
+    print("Inside the Ingest DGP2Wicker Function")
     def open_scene(
         scene_json_uri: str,
         temp_dir: str,
@@ -399,20 +404,27 @@ def ingest_dgp_to_wicker(
         -------
         dataset: A DGP dataset
         """
+        print('Inside Open Scene')
         scene_dir_uri = os.path.dirname(scene_json_uri)
         scene_json = os.path.basename(scene_json_uri)
 
-        if scene_dir_uri.startswith('s3://'):
+        if scene_dir_uri.startswith('s3://') or scene_dir_uri.startswith('gs://'):
             # If the scene is in s3, fetch it
             local_path = temp_dir
-            assert not temp_dir.startswith('s3'), f'{temp_dir}'
+            assert not (temp_dir.startswith('s3') or temp_dir.startswith('gs')), f'{temp_dir}'
             if alternate_scene_uri is not None:
                 alternate_scene_dir = os.path.join(alternate_scene_uri, os.path.basename(scene_dir_uri))
                 logger.info(f'downloading additional scene data from {alternate_scene_dir} to {local_path}')
-                sync_dir(alternate_scene_dir, local_path)
+                if temp_dir.startswith('gs'):
+                    sync_dir_gcs(alternate_scene_dir, local_path)
+                else:
+                    sync_dir(alternate_scene_dir, local_path)
 
             logger.info(f'downloading scene from {scene_dir_uri} to {local_path}')
-            sync_dir(scene_dir_uri, local_path)
+            if scene_dir_uri.startswith('gs'):
+                sync_dir_gcs(scene_dir_uri, local_path)
+            else:
+                sync_dir(scene_dir_uri, local_path)
         else:
             # Otherwise we expect the scene is on disk somewhere, so we just ignore the temp_dir
             local_path = scene_dir_uri
@@ -459,6 +471,7 @@ def ingest_dgp_to_wicker(
         wicker_sample: (split, sample)
             Yields a wicker converted sample
         """
+        print("In Process Scene")
         for scene_info in partition:
             yield_count = 0
             global_scene_index, split, scene_json_uri, chunk = scene_info
@@ -527,6 +540,7 @@ def ingest_dgp_to_wicker(
 
     if pipeline is None:
         pipeline = []
+    print("------------Starting---------------")
 
     # Parse the dataset json and get the scene list. This is a list of tuple split, fully qualified scene uri
     scenes = get_scenes(scene_dataset_json, data_uri=data_uri)
@@ -555,6 +569,7 @@ def ingest_dgp_to_wicker(
         ontology_table = dataset.dataset_metadata.ontology_table
 
     # Build the schema from the sample
+    print("------------Build the schema from the sample---------------")
     wicker_types = wicker_types_from_sample(
         sample=sample,
         ontology_table=ontology_table,
@@ -577,7 +592,7 @@ def ingest_dgp_to_wicker(
     # Setup spark
     if spark_context is None:
         spark_context = local_spark()
-
+    print("------------Starting Spark Based Process Scene---------------")
     process = partial(process_scene, dataset_kwargs=dataset_kwargs, pipeline=pipeline, wicker_types=wicker_types)
     rdd = spark_context.parallelize(scenes,
                                     numSlices=num_partitions).mapPartitions(process).repartition(num_repartitions)

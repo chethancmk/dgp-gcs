@@ -55,9 +55,9 @@ setup(
         'dgp_cli=dgp.cli:cli',
     ]},
     include_package_data=True,
-    setup_requires=['cython==0.29.21', 'grpcio==1.41.0', 'grpcio-tools==1.41.0'],
-    install_requires=requirements,
-    extras_require={'dev': requirements_dev},
+#    setup_requires=['cython==0.29.21', 'grpcio==1.41.0', 'grpcio-tools==1.41.0'],
+#    install_requires=requirements,
+#    extras_require={'dev': requirements_dev},
     zip_safe=False,
     python_requires='>=3.6',
     cmdclass={
